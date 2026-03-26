@@ -1,24 +1,30 @@
 """
 stratified_split.py
 --------------------
-从已转换好的 yolo_dataset (images/train, images/val, labels/train, labels/val)
-读取全部数据，按 **每个类别** 做 2:8 (val:train) 重新划分，
-结果写入 dataset/ 目录。
+从已转换好的 yolo_dataset (images/train + images/val, labels/train + labels/val)
+读取全部数据，按 **每个类别** 做分层划分，
+并严格保证最终：train = 3200 张，val = 800 张（共 4000 张）。
+
+划分策略：
+  1. 对每个类别按 8:2 比例分配 val 配额（少数类至少保证 1 张）。
+  2. 从少到多处理各类别，优先保障稀少类在 val 中有代表性。
+  3. 完成分层分配后，若 val 数量 != 800，从 train 里随机补足
+     （或将 val 多余部分移回 train），保证总数严格正确。
+  4. 最终 train 严格 = 3200，val 严格 = 800，且两者无重叠。
 
 用法:
     python stratified_split.py
-    # 或指定路径
     python stratified_split.py --src /path/to/yolo_dataset --dst /path/to/dataset
+    python stratified_split.py --train-count 3200 --val-count 800
 """
 
-import os
 import shutil
 import random
 import argparse
 from pathlib import Path
 from collections import defaultdict
 
-# ==================== 类别定义（与原脚本保持一致）====================
+# ==================== 类别定义 ====================
 CLASSES = {
     'lmlj': 0,    # 路面垃圾
     'hbgdf': 1,   # 红白杆倒伏
@@ -41,22 +47,19 @@ CLASS_NAMES_CN = {
 }
 ID_TO_CODE = {v: k for k, v in CLASSES.items()}
 
+
 # ==================== 工具函数 ====================
 
 def collect_all_pairs(src_dir: Path):
-    """
-    收集 src_dir 下 images/{train,val} 与 labels/{train,val} 的全部文件对。
-    返回: list of (image_path, label_path)
-    """
+    """收集 src_dir 下 train+val 全部 (image_path, label_path) 对。"""
     pairs = []
     for split in ('train', 'val'):
         img_dir   = src_dir / 'images' / split
         label_dir = src_dir / 'labels' / split
         if not img_dir.exists() or not label_dir.exists():
-            print(f"⚠️  目录不存在，跳过: {img_dir} / {label_dir}")
+            print(f"⚠️  目录不存在，跳过: {split}")
             continue
         for label_file in sorted(label_dir.glob('*.txt')):
-            # 寻找对应图片（支持常见后缀）
             img_file = None
             for ext in ('.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG'):
                 candidate = img_dir / (label_file.stem + ext)
@@ -64,14 +67,14 @@ def collect_all_pairs(src_dir: Path):
                     img_file = candidate
                     break
             if img_file is None:
-                print(f"⚠️  找不到图片，跳过标注: {label_file}")
+                print(f"⚠️  找不到图片，跳过: {label_file.name}")
                 continue
             pairs.append((img_file, label_file))
     return pairs
 
 
 def get_classes_in_label(label_path: Path):
-    """读取一个 YOLO label 文件，返回其中出现的类别 ID 集合。"""
+    """返回一个 label 文件中出现的类别 ID 集合。"""
     class_ids = set()
     try:
         with open(label_path, 'r') as f:
@@ -84,63 +87,78 @@ def get_classes_in_label(label_path: Path):
     return class_ids
 
 
-def stratified_split(pairs, val_ratio=0.2, seed=42):
+def stratified_split_indices(pairs, val_ratio: float, seed: int):
     """
-    按类别做分层划分：
-    - 对每个类别，将包含该类别的图片按 val_ratio 分配到 val，其余到 train。
-    - 一张图片可能含多个类别，优先保证稀少类别的 val 配额，
-      用已分配状态避免重复计入。
-    返回: (train_pairs, val_pairs)
+    按类别分层划分，返回 (val_indices_set, train_indices_set)。
+    数量在此步可能不严格等于目标值，后续 adjust 步骤修正。
     """
     random.seed(seed)
 
-    # 构建 类别 -> [pair_index, ...] 的索引
+    # 类别 -> [pair 索引]
     class_to_indices = defaultdict(list)
-    for idx, (img, label) in enumerate(pairs):
+    for idx, (_, label) in enumerate(pairs):
         for cid in get_classes_in_label(label):
             class_to_indices[cid].append(idx)
 
-    # 按各类别样本数从少到多排序，确保稀少类别优先得到 val 保障
+    # 稀少类别优先处理，保证其在 val 中有代表
     sorted_classes = sorted(class_to_indices.keys(),
                             key=lambda c: len(class_to_indices[c]))
 
-    assigned_val   = set()   # 已分配到 val 的 pair 索引
-    assigned_train = set()   # 已分配到 train 的 pair 索引
+    assigned_val   = set()
+    assigned_train = set()
 
     for cid in sorted_classes:
         indices = class_to_indices[cid].copy()
         random.shuffle(indices)
 
-        # 统计该类别尚未分配的样本
-        unassigned = [i for i in indices
-                      if i not in assigned_val and i not in assigned_train]
-
-        # 需要分配到 val 的数量（向上取整，至少保证 1 张）
         total_for_class = len(indices)
         need_val = max(1, round(total_for_class * val_ratio))
 
-        # 先从未分配的里取 val
         already_val = [i for i in indices if i in assigned_val]
-        still_need  = max(0, need_val - len(already_val))
+        unassigned  = [i for i in indices
+                       if i not in assigned_val and i not in assigned_train]
 
-        new_val = unassigned[:still_need]
-        new_train = unassigned[still_need:]
+        still_need = max(0, need_val - len(already_val))
+        new_val    = unassigned[:still_need]
+        new_train  = unassigned[still_need:]
 
         assigned_val.update(new_val)
         assigned_train.update(new_train)
 
-    # 未被任何类别覆盖的（空标注文件）全部归入 train
+    # 空标注或未被任何类别覆盖的归入 train
     all_indices = set(range(len(pairs)))
-    unhandled = all_indices - assigned_val - assigned_train
+    unhandled   = all_indices - assigned_val - assigned_train
     assigned_train.update(unhandled)
 
-    train_pairs = [pairs[i] for i in sorted(assigned_train)]
-    val_pairs   = [pairs[i] for i in sorted(assigned_val)]
-    return train_pairs, val_pairs
+    return assigned_val, assigned_train
+
+
+def adjust_to_exact_counts(val_set: set, train_set: set,
+                           target_val: int, target_train: int, seed: int):
+    """
+    精确调整到目标数量：
+    - val 过多 → 随机将多余的移回 train
+    - val 过少 → 随机从 train 中补入 val
+    随机操作保证不破坏已有的分层均衡（微小调整）。
+    """
+    rng = random.Random(seed + 99)
+
+    # val 过多，移回 train
+    while len(val_set) > target_val:
+        idx = rng.choice(sorted(val_set))
+        val_set.remove(idx)
+        train_set.add(idx)
+
+    # val 过少，从 train 补
+    while len(val_set) < target_val:
+        idx = rng.choice(sorted(train_set))
+        train_set.remove(idx)
+        val_set.add(idx)
+
+    return val_set, train_set
 
 
 def copy_pairs(pairs, img_dst: Path, label_dst: Path):
-    """将 (image, label) 对复制到目标目录。"""
     img_dst.mkdir(parents=True, exist_ok=True)
     label_dst.mkdir(parents=True, exist_ok=True)
     for img, label in pairs:
@@ -149,7 +167,7 @@ def copy_pairs(pairs, img_dst: Path, label_dst: Path):
 
 
 def print_split_stats(train_pairs, val_pairs):
-    """打印划分后各类别在 train / val 中的分布。"""
+    """打印各类别在 train/val 中的图片数分布。"""
     def count_classes(pairs):
         counter = defaultdict(int)
         for _, label in pairs:
@@ -161,31 +179,29 @@ def print_split_stats(train_pairs, val_pairs):
     val_counts   = count_classes(val_pairs)
     all_cids     = sorted(set(train_counts) | set(val_counts))
 
-    print("\n" + "="*70)
-    print("📊 按类别划分结果统计（以图片数计，一图可含多类）")
-    print("="*70)
-    header = f"{'ID':<4} {'编码':<8} {'中文名':<10} {'Train':<8} {'Val':<8} {'Total':<8} {'Val%':<6}"
-    print(header)
-    print("-"*70)
+    print("\n" + "="*72)
+    print("📊 按类别划分结果（图片数，一张图可含多个类别）")
+    print("="*72)
+    print(f"{'ID':<4} {'编码':<8} {'中文名':<10} {'Train':>7} {'Val':>6} {'Total':>7} {'Val%':>6}")
+    print("-"*72)
     for cid in all_cids:
-        code    = ID_TO_CODE.get(cid, f'cls{cid}')
-        cn      = CLASS_NAMES_CN.get(code, '?')
-        t       = train_counts.get(cid, 0)
-        v       = val_counts.get(cid, 0)
-        total   = t + v
-        pct     = f"{v/total*100:.1f}%" if total else "N/A"
-        print(f"{cid:<4} {code:<8} {cn:<10} {t:<8} {v:<8} {total:<8} {pct:<6}")
-    print("-"*70)
-    print(f"{'合计':<23} {len(train_pairs):<8} {len(val_pairs):<8} "
-          f"{len(train_pairs)+len(val_pairs):<8}")
-    print("="*70)
+        code  = ID_TO_CODE.get(cid, f'cls{cid}')
+        cn    = CLASS_NAMES_CN.get(code, '?')
+        t     = train_counts.get(cid, 0)
+        v     = val_counts.get(cid, 0)
+        total = t + v
+        pct   = f"{v/total*100:.1f}%" if total else "N/A"
+        print(f"{cid:<4} {code:<8} {cn:<10} {t:>7} {v:>6} {total:>7} {pct:>6}")
+    print("-"*72)
+    print(f"{'图片总数合计':<23} {len(train_pairs):>7} {len(val_pairs):>6} "
+          f"{len(train_pairs)+len(val_pairs):>7}")
+    print("="*72)
 
 
 def create_yaml(dst_dir: Path):
-    """在 dataset/ 下生成 dataset.yaml。"""
     class_names = [ID_TO_CODE[i] for i in range(len(CLASSES))]
-    yaml_lines = [
-        "# YOLO 数据集配置（按类别分层划分版）",
+    lines = [
+        "# YOLO 数据集配置（按类别分层划分，严格 3200/800）",
         f"path: {dst_dir.absolute()}",
         "train: images/train",
         "val: images/val",
@@ -197,80 +213,110 @@ def create_yaml(dst_dir: Path):
     ]
     for code, cid in sorted(CLASSES.items(), key=lambda x: x[1]):
         cn = CLASS_NAMES_CN.get(code, '')
-        yaml_lines.append(f"# {cid}: {code} ({cn})")
-
-    yaml_path = dst_dir / 'dataset.yaml'
-    yaml_path.write_text('\n'.join(yaml_lines) + '\n', encoding='utf-8')
-    print(f"✅ dataset.yaml 已生成: {yaml_path}")
+        lines.append(f"# {cid}: {code}  ({cn})")
+    (dst_dir / 'dataset.yaml').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    print(f"✅ dataset.yaml 已生成")
 
 
 # ==================== 主流程 ====================
 
 def main():
-    parser = argparse.ArgumentParser(description='按类别分层重新划分 YOLO 数据集')
-    parser.add_argument('--src', default='yolo_dataset',
-                        help='已转换好的 yolo_dataset 目录（默认: yolo_dataset）')
-    parser.add_argument('--dst', default='dataset',
-                        help='输出目录（默认: dataset）')
-    parser.add_argument('--val-ratio', type=float, default=0.2,
-                        help='验证集比例（默认: 0.2）')
-    parser.add_argument('--seed', type=int, default=42,
+    parser = argparse.ArgumentParser(
+        description='按类别分层 + 严格数量 重新划分 YOLO 数据集'
+    )
+    parser.add_argument('--src',         default='yolo_dataset',
+                        help='源 yolo_dataset 目录（默认: yolo_dataset）')
+    parser.add_argument('--dst',         default='dataset',
+                        help='输出目录（默认: dataset/）')
+    parser.add_argument('--train-count', type=int, default=3200,
+                        help='训练集严格数量（默认: 3200）')
+    parser.add_argument('--val-count',   type=int, default=800,
+                        help='验证集严格数量（默认: 800）')
+    parser.add_argument('--seed',        type=int, default=42,
                         help='随机种子（默认: 42）')
     args = parser.parse_args()
 
-    src_dir = Path(args.src)
-    dst_dir = Path(args.dst)
+    src_dir      = Path(args.src)
+    dst_dir      = Path(args.dst)
+    target_train = args.train_count
+    target_val   = args.val_count
+    target_total = target_train + target_val
 
     print("="*60)
-    print("🚀 按类别分层重新划分数据集")
+    print("🚀 按类别分层重新划分数据集（严格数量版）")
     print("="*60)
-    print(f"源目录  : {src_dir.absolute()}")
-    print(f"目标目录: {dst_dir.absolute()}")
-    print(f"Val 比例: {args.val_ratio} ({int(args.val_ratio*10)}:{int((1-args.val_ratio)*10)})")
-    print(f"随机种子: {args.seed}")
+    print(f"源目录   : {src_dir.absolute()}")
+    print(f"目标目录 : {dst_dir.absolute()}")
+    print(f"目标数量 : train={target_train}  val={target_val}  total={target_total}")
+    print(f"随机种子 : {args.seed}")
 
-    # 1. 收集所有文件对
+    # 1. 收集全部文件对
     print("\n📂 读取已有数据...")
     all_pairs = collect_all_pairs(src_dir)
     if not all_pairs:
-        print("❌ 未找到任何有效的图片-标注对，请检查源目录。")
+        print("❌ 未找到任何有效图片-标注对，请检查源目录。")
         return
-    print(f"共找到 {len(all_pairs)} 对图片-标注文件")
 
-    # 2. 分层划分
+    actual_total = len(all_pairs)
+    print(f"共找到 {actual_total} 对图片-标注文件")
+
+    if actual_total != target_total:
+        print(f"\n❌ 错误：数据集共 {actual_total} 张，"
+              f"但目标要求恰好 {target_total} 张（{target_train} + {target_val}）。")
+        print("   请确认源目录数据完整，或通过 --train-count / --val-count 调整目标数量。")
+        return
+
+    # 2. 分层划分（初步，数量可能不严格）
     print("\n✂️  按类别进行分层划分...")
-    train_pairs, val_pairs = stratified_split(
-        all_pairs, val_ratio=args.val_ratio, seed=args.seed
-    )
+    val_ratio = target_val / target_total
+    val_set, train_set = stratified_split_indices(all_pairs, val_ratio, args.seed)
+    print(f"   初步分层：train={len(train_set)}  val={len(val_set)}")
 
-    # 3. 打印统计
+    # 3. 精确调整到目标数量
+    if len(val_set) != target_val:
+        diff = len(val_set) - target_val
+        direction = "减少" if diff > 0 else "增加"
+        print(f"   ⚙️  val {direction} {abs(diff)} 张以满足严格数量要求...")
+        val_set, train_set = adjust_to_exact_counts(
+            val_set, train_set,
+            target_val=target_val, target_train=target_train,
+            seed=args.seed
+        )
+
+    # 4. 严格验证
+    assert len(val_set)   == target_val,   f"val 数量异常: {len(val_set)}"
+    assert len(train_set) == target_train, f"train 数量异常: {len(train_set)}"
+    assert len(val_set & train_set) == 0,  "val 与 train 存在重叠！"
+    print(f"   ✅ 验证通过：train={len(train_set)}  val={len(val_set)}")
+
+    # 5. 整理为列表（按索引排序保证可复现）
+    train_pairs = [all_pairs[i] for i in sorted(train_set)]
+    val_pairs   = [all_pairs[i] for i in sorted(val_set)]
+
+    # 6. 打印各类别分布统计
     print_split_stats(train_pairs, val_pairs)
 
-    # 4. 复制文件到 dataset/
+    # 7. 复制文件到 dataset/
     print(f"\n📁 写入目标目录: {dst_dir}")
     if dst_dir.exists():
-        print(f"  ⚠️  目标目录已存在，将覆盖其中文件（不删除目录）")
+        print(f"   ⚠️  目标目录已存在，将覆盖其中同名文件")
 
-    copy_pairs(train_pairs,
-               dst_dir / 'images' / 'train',
-               dst_dir / 'labels' / 'train')
-    copy_pairs(val_pairs,
-               dst_dir / 'images' / 'val',
-               dst_dir / 'labels' / 'val')
+    copy_pairs(train_pairs, dst_dir / 'images' / 'train', dst_dir / 'labels' / 'train')
+    copy_pairs(val_pairs,   dst_dir / 'images' / 'val',   dst_dir / 'labels' / 'val')
 
-    # 5. 复制 classes.txt（如存在）
+    # 8. 复制 classes.txt（如存在）
     src_classes = src_dir / 'classes.txt'
     if src_classes.exists():
         shutil.copy2(src_classes, dst_dir / 'classes.txt')
         print(f"✅ classes.txt 已复制")
 
-    # 6. 生成 dataset.yaml
+    # 9. 生成 dataset.yaml
     create_yaml(dst_dir)
 
     print("\n" + "="*60)
     print("✅ 完成！")
-    print(f"   训练集: {len(train_pairs)} 张图片  →  {dst_dir}/images/train")
-    print(f"   验证集: {len(val_pairs)} 张图片  →  {dst_dir}/images/val")
+    print(f"   训练集 : {len(train_pairs)} 张  →  {dst_dir}/images/train")
+    print(f"   验证集 : {len(val_pairs)} 张  →  {dst_dir}/images/val")
     print("="*60)
 
 

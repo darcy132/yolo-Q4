@@ -12,12 +12,12 @@ def train():
         results = model.train(resume=True)
     else:
         print("[New] 未发现 checkpoint，从头开始训练")
-        model = YOLO('yolov8l.pt')  # 可选: yolov8n/s/m/l/x，精度要求高用 l 或 x
+        model = YOLO('yolov8s.pt')  # 可选: yolov8n/s/m/l/x，精度要求高用 l 或 x
         results = model.train(
-            data='/home/forge/yolo-Q4/yolo_dataset/dataset.yaml', # 请根据实际路径调整
+            data='/home/forge/workspace/yolo-Q4/yolo_dataset/dataset.yaml', # 请根据实际路径调整
             epochs=200,
-            imgsz=1280,         # 道路裂缝细节多，建议高分辨率
-            batch=8,            # 根据显存调整
+            imgsz=640,         # 道路裂缝细节多，建议高分辨率
+            batch=32,            # 根据显存调整
             device=0,           # GPU
             
             # 优化器
@@ -44,14 +44,18 @@ def train():
             
             # 训练策略
             close_mosaic=20,    # 最后20个epoch关闭mosaic，稳定收敛
-            patience=50,        # 早停
+            patience=30,        # 早停
             
             # 保存
             project='runs/detect',
             name='road_damage_v1',
             save_period=10,
         )
-        
+    
+    if results:
+        print(f"Best mAP50: {results.results_dict.get('metrics/mAP50(B)', 'N/A')}")
+        print(f"Best mAP50-95: {results.results_dict.get('metrics/mAP50-95(B)', 'N/A')}")
+            
     return results
 
 if __name__ == '__main__':

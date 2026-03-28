@@ -10,3 +10,5 @@ yolo11l.pt
 yolo26s.pt
 yolo26l.pt
 yolov8n.pt
+wandb
+dataset.zip

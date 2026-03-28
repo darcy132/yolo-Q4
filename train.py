@@ -3,7 +3,7 @@ import torch
 import os
 
 def train():
-    checkpoint = 'runs/detect/runs/detect/road_damage_v1/weights/last.pt' # 请根据实际路径调整
+    checkpoint = 'runs/detect/runs/detect/road_damage_v2/weights/last.pt' # 请根据实际路径调整
     
     # 自动判断是新训练还是恢复训练
     if os.path.exists(checkpoint):
@@ -48,7 +48,7 @@ def train():
             
             # 保存
             project='runs/detect',
-            name='road_damage_v1',
+            name='road_damage_v2',
             save_period=10,
         )
     

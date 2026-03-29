@@ -14,4 +14,5 @@ wandb
 dataset.zip
 dataset_cz
 dataset_cz_aug
+dataset_aug
 vis_output

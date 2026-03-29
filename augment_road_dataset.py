@@ -53,7 +53,7 @@ BASE_MULTIPLIER = 0          # 普通类别增强3倍
 SMALL_THRESH    = 300        # 低于此数量视为小样本
 SMALL_MULT      = 0         # 小样本增强10倍（hbgdf/ssf/cz）
 TINY_THRESH     = 100        # 极小样本
-TINY_MULT       = 2         # hbgdf 极小样本增强20倍
+TINY_MULT       = 8         # hbgdf 极小样本增强20倍
 
 
 def get_multiplier(class_id: int) -> int:
@@ -68,60 +68,48 @@ def get_multiplier(class_id: int) -> int:
 # ══════════════════════════════════════════════
 # 2. Albumentations Pipeline 定义
 # ══════════════════════════════════════════════
-
 def build_pipeline_mild() -> A.Compose:
     """轻度增强：用于多数类，保持分布稳定"""
     return A.Compose(
         [
             # ── 几何 ──────────────────────────────
             A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.3),            # 路面俯拍可上下翻
+            A.VerticalFlip(p=0.3),
             A.RandomRotate90(p=0.3),
-            A.ShiftScaleRotate(
-                shift_limit=0.05,
-                scale_limit=0.15,
-                rotate_limit=10,
+            A.Affine(
+                translate_percent=(-0.05, 0.05),
+                scale=(0.85, 1.15),
+                rotate=(-10, 10),
                 border_mode=cv2.BORDER_REFLECT_101,
                 p=0.5,
             ),
             A.Perspective(scale=(0.03, 0.07), p=0.3),
 
             # ── 光照/颜色 ─────────────────────────
-            A.RandomBrightnessContrast(
-                brightness_limit=0.25,
-                contrast_limit=0.25,
-                p=0.6,
-            ),
-            A.HueSaturationValue(
-                hue_shift_limit=8,
-                sat_shift_limit=20,
-                val_shift_limit=20,
-                p=0.4,
-            ),
+            A.RandomBrightnessContrast(brightness_limit=0.25, contrast_limit=0.25, p=0.6),
+            A.HueSaturationValue(hue_shift_limit=8, sat_shift_limit=20, val_shift_limit=20, p=0.4),
             A.CLAHE(clip_limit=3.0, tile_grid_size=(8, 8), p=0.3),
 
             # ── 天气/环境 ─────────────────────────
             A.RandomShadow(
                 shadow_roi=(0, 0.3, 1, 1),
-                num_shadows_lower=1,
-                num_shadows_upper=2,
+                num_shadows_limit=(1, 2),
                 shadow_dimension=4,
                 p=0.25,
             ),
-            A.RandomFog(fog_coef_lower=0.05, fog_coef_upper=0.2, p=0.15),
+            A.RandomFog(fog_coef_range=(0.05, 0.2), p=0.15),
             A.RandomRain(
-                slant_lower=-5, slant_upper=5,
+                slant_range=(-5, 5),
                 drop_length=8, drop_width=1,
                 drop_color=(180, 180, 180),
-                blur_value=2,
-                brightness_coefficient=0.9,
+                blur_value=2, brightness_coefficient=0.9,
                 p=0.1,
             ),
 
             # ── 噪声/模糊/压缩 ───────────────────
             A.OneOf(
                 [
-                    A.GaussNoise(var_limit=(5.0, 30.0)),
+                    A.GaussNoise(std_range=(0.02, 0.11)),
                     A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.05, 0.2)),
                 ],
                 p=0.3,
@@ -134,23 +122,22 @@ def build_pipeline_mild() -> A.Compose:
                 ],
                 p=0.2,
             ),
-            A.ImageCompression(quality_lower=70, quality_upper=95, p=0.2),
+            A.ImageCompression(quality_range=(70, 95), p=0.2),
 
             # ── 遮挡 ──────────────────────────────
             A.CoarseDropout(
-                max_holes=4,
-                max_height=32,
-                max_width=32,
-                min_holes=1,
-                fill_value=128,
+                num_holes_range=(1, 4),
+                hole_height_range=(8, 32),
+                hole_width_range=(8, 32),
+                fill=128,
                 p=0.15,
             ),
         ],
         bbox_params=A.BboxParams(
             format="yolo",
             label_fields=["class_labels"],
-            min_area=100,          # 过小的框增强后丢弃
-            min_visibility=0.3,    # 可见度低于30%丢弃
+            min_area=100,
+            min_visibility=0.3,
         ),
     )
 
@@ -163,60 +150,47 @@ def build_pipeline_heavy() -> A.Compose:
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
             A.RandomRotate90(p=0.5),
-            A.ShiftScaleRotate(
-                shift_limit=0.1,
-                scale_limit=0.25,
-                rotate_limit=20,
+            A.Affine(
+                translate_percent=(-0.1, 0.1),
+                scale=(0.75, 1.25),
+                rotate=(-20, 20),
                 border_mode=cv2.BORDER_REFLECT_101,
                 p=0.7,
             ),
             A.Perspective(scale=(0.05, 0.12), p=0.5),
             A.ElasticTransform(
-                alpha=30,
-                sigma=5,
-                alpha_affine=5,
+                alpha=30, sigma=5,
                 border_mode=cv2.BORDER_REFLECT_101,
                 p=0.3,
             ),
 
             # ── 光照/颜色（更激进）───────────────
-            A.RandomBrightnessContrast(
-                brightness_limit=0.4,
-                contrast_limit=0.4,
-                p=0.7,
-            ),
-            A.HueSaturationValue(
-                hue_shift_limit=15,
-                sat_shift_limit=35,
-                val_shift_limit=35,
-                p=0.6,
-            ),
+            A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4, p=0.7),
+            A.HueSaturationValue(hue_shift_limit=15, sat_shift_limit=35, val_shift_limit=35, p=0.6),
             A.CLAHE(clip_limit=5.0, tile_grid_size=(8, 8), p=0.4),
             A.RandomGamma(gamma_limit=(70, 140), p=0.4),
-            A.ToGray(p=0.1),       # 少量灰度增强鲁棒性
+            A.ToGray(p=0.1),
 
             # ── 天气/环境 ─────────────────────────
             A.RandomShadow(
                 shadow_roi=(0, 0.2, 1, 1),
-                num_shadows_lower=1,
-                num_shadows_upper=3,
+                num_shadows_limit=(1, 3),
                 shadow_dimension=5,
                 p=0.4,
             ),
-            A.RandomFog(fog_coef_lower=0.05, fog_coef_upper=0.3, p=0.25),
+            A.RandomFog(fog_coef_range=(0.05, 0.3), p=0.25),
             A.RandomRain(p=0.15),
             A.RandomSunFlare(
                 flare_roi=(0, 0, 1, 0.5),
-                angle_lower=0,
-                num_flare_circles_lower=3,
-                num_flare_circles_upper=6,
+                angle_range=(0, 1),
+                num_flare_circles_range=(3, 6),
                 p=0.1,
             ),
 
             # ── 噪声/模糊/压缩 ───────────────────
             A.OneOf(
                 [
-                    A.GaussNoise(var_limit=(10.0, 60.0)),
+                    A.GaussNoise(std_range=(0.04, 0.24)),
                     A.ISONoise(color_shift=(0.02, 0.08), intensity=(0.1, 0.35)),
                     A.MultiplicativeNoise(multiplier=(0.85, 1.15)),
                 ],
@@ -230,15 +204,14 @@ def build_pipeline_heavy() -> A.Compose:
                 ],
                 p=0.3,
             ),
-            A.ImageCompression(quality_lower=50, quality_upper=90, p=0.3),
+            A.ImageCompression(quality_range=(50, 90), p=0.3),
 
             # ── 遮挡 ──────────────────────────────
             A.CoarseDropout(
-                max_holes=8,
-                max_height=48,
-                max_width=48,
-                min_holes=2,
-                fill_value=128,
+                num_holes_range=(2, 8),
+                hole_height_range=(12, 48),
+                hole_width_range=(12, 48),
+                fill=128,
                 p=0.25,
             ),
         ],
@@ -249,7 +222,6 @@ def build_pipeline_heavy() -> A.Compose:
             min_visibility=0.3,
         ),
     )
-
 
 # ══════════════════════════════════════════════
 # 3. YOLO 标注 IO
@@ -436,12 +408,12 @@ def run_augmentation(
 # ══════════════════════════════════════════════
 # 6. CLI
 # ══════════════════════════════════════════════
-
+# /home/featurize/data/dataset
 def parse_args():
     p = argparse.ArgumentParser(description="道路数据集离线增强")
-    p.add_argument("--src_dir",       default="/home/forge/workspace/yolo-Q4/dataset",
+    p.add_argument("--src_dir",       default="/home/featurize/data/dataset/dataset",
                    help="原始数据集根目录（含 images/labels 子目录）")
-    p.add_argument("--out_dir",       default="/home/forge/workspace/yolo-Q4/dataset_aug",
+    p.add_argument("--out_dir",       default="/home/featurize/data/dataset/dataset_aug",
                    help="输出数据集根目录")
     p.add_argument("--split",         default="train",
                    choices=["train", "val", "test"],

@@ -12,3 +12,5 @@ yolo26l.pt
 yolov8n.pt
 wandb
 dataset.zip
+dataset_cz
+dataset_cz_aug

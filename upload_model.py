@@ -1,7 +1,7 @@
 from modelscope.hub.api import HubApi
 
 api = HubApi()
-api.login('ms-7c80103d-ce74-4d4c-932d-256e6b6dc645')  # 或用环境变量 MODELSCOPE_API_TOKEN
+api.login('ms-7c80103d-ce74-4d4c-')  # 或用环境变量 MODELSCOPE_API_TOKEN
 
 # api.push_model(
 #     model_id='forgeX/yolo-Q4',

@@ -1,7 +1,7 @@
 from modelscope.hub.api import HubApi
 
 api = HubApi()
-api.login('ms-7c80103d-ce74-4d4c-932d-')  # 或用环境变量 MODELSCOPE_API_TOKEN
+api.login('ms-7c80103d-ce74-4d4c-932d-256e6b6dc645')  # 或用环境变量 MODELSCOPE_API_TOKEN
 
 # api.push_model(
 #     model_id='forgeX/yolo-Q4',
@@ -14,9 +14,9 @@ api.login('ms-7c80103d-ce74-4d4c-932d-')  # 或用环境变量 MODELSCOPE_API_TO
 
 api.upload_folder(
     repo_id='forgeX/yolo-Q4',
-    folder_path='./runs/detect/runs/detect/road_damage_v1_yolo26l-freeze-stage1-weighted',
-    path_in_repo='yolo26l-freeze-80epochs-weight-datasetloader',          # ← 上传到仓库中的子目录名
-    commit_message='add yolo26l-freeze-80epochs-weight-datasetloader training files',
+    folder_path='./runs/detect/runs/detect/road_damage_v1_yolo26n-aug',
+    path_in_repo='yolo26n-200epochs-aug',          # ← 上传到仓库中的子目录名
+    commit_message='add yolo26n-200epochs-aug training files',
 )
 
 # # 上传文件

@@ -3,15 +3,15 @@ from ultralytics import YOLO
 import wandb
 
 # ── 路径配置 ─────────────────────────────────────────────────────────────────
-DATA        = '/home/featurize/data/dataset/dataset.yaml'
+DATA        = '/home/forge/workspace/yolo-Q4/dataset_aug/dataset.yaml'
 PROJECT     = 'runs/detect'
-NAME        = 'road_damage_v1_yolo26s-freeze-aug'
+NAME        = 'road_damage_v1_yolo26n-aug'
 IMGSZ       = 640
 DEVICE      = 0
-BATCH       = 32
+BATCH       = 64
 EPOCHS      = 200
-WANDB_PROJECT = 'road-damage-detection'
-WANDB_RUN     = NAME
+# WANDB_PROJECT = 'road-damage-detection'
+# WANDB_RUN     = NAME
 # ── 训练超参 ─────────────────────────────────────────────────────────────────
 TRAIN_KWARGS = dict(
     data         = DATA,
@@ -64,13 +64,13 @@ def train():
 
     if os.path.exists(last):
         print(f"[Resume] 从断点恢复 → {last}")
-        init_wandb(resume=True)
+        # init_wandb(resume=True)
         model   = YOLO(last)
         results = model.train(resume=True)
     else:
         print("[New] 未发现 checkpoint，从头开始训练")
-        init_wandb(resume=False)
-        model   = YOLO('yolo26s.pt')
+        # init_wandb(resume=False)
+        model   = YOLO('yolo26n.pt')
         results = model.train(**TRAIN_KWARGS)
 
     # ── 打印最终指标 ──────────────────────────────────────────────────────────
@@ -81,11 +81,11 @@ def train():
         print(f"\nBest mAP50    : {map50}")
         print(f"Best mAP50-95 : {map5095}")
 
-        # 同步最终指标到 W&B
-        wandb.summary['best_mAP50']    = map50
-        wandb.summary['best_mAP50-95'] = map5095
+    #     # 同步最终指标到 W&B
+    #     wandb.summary['best_mAP50']    = map50
+    #     wandb.summary['best_mAP50-95'] = map5095
 
-    wandb.finish()
+    # wandb.finish()
     return results
 
 

@@ -70,7 +70,7 @@ def train():
     else:
         print("[New] 未发现 checkpoint，从头开始训练")
         init_wandb(resume=False)
-        model   = YOLO('yolo8l.pt')
+        model   = YOLO('yolov8l.pt')
         results = model.train(**TRAIN_KWARGS)
 
     # ── 打印最终指标 ──────────────────────────────────────────────────────────

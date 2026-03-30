@@ -68,161 +68,205 @@ def get_multiplier(class_id: int) -> int:
 # ══════════════════════════════════════════════
 # 2. Albumentations Pipeline 定义
 # ══════════════════════════════════════════════
-def build_pipeline_mild() -> A.Compose:
-    """轻度增强：用于多数类，保持分布稳定"""
+# def build_pipeline_mild() -> A.Compose:
+#     """轻度增强：用于多数类，保持分布稳定"""
+#     return A.Compose(
+#         [
+#             # ── 几何 ──────────────────────────────
+#             A.HorizontalFlip(p=0.5),
+#             A.VerticalFlip(p=0.3),
+#             A.RandomRotate90(p=0.3),
+#             A.Affine(
+#                 translate_percent=(-0.05, 0.05),
+#                 scale=(0.85, 1.15),
+#                 rotate=(-10, 10),
+#                 border_mode=cv2.BORDER_REFLECT_101,
+#                 p=0.5,
+#             ),
+#             A.Perspective(scale=(0.03, 0.07), p=0.3),
+
+#             # ── 光照/颜色 ─────────────────────────
+#             A.RandomBrightnessContrast(brightness_limit=0.25, contrast_limit=0.25, p=0.6),
+#             A.HueSaturationValue(hue_shift_limit=8, sat_shift_limit=20, val_shift_limit=20, p=0.4),
+#             A.CLAHE(clip_limit=3.0, tile_grid_size=(8, 8), p=0.3),
+
+#             # ── 天气/环境 ─────────────────────────
+#             A.RandomShadow(
+#                 shadow_roi=(0, 0.3, 1, 1),
+#                 num_shadows_limit=(1, 2),
+#                 shadow_dimension=4,
+#                 p=0.25,
+#             ),
+#             A.RandomFog(fog_coef_range=(0.05, 0.2), p=0.15),
+#             A.RandomRain(
+#                 slant_range=(-5, 5),
+#                 drop_length=8, drop_width=1,
+#                 drop_color=(180, 180, 180),
+#                 blur_value=2, brightness_coefficient=0.9,
+#                 p=0.1,
+#             ),
+
+#             # ── 噪声/模糊/压缩 ───────────────────
+#             A.OneOf(
+#                 [
+#                     A.GaussNoise(std_range=(0.02, 0.11)),
+#                     A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.05, 0.2)),
+#                 ],
+#                 p=0.3,
+#             ),
+#             A.OneOf(
+#                 [
+#                     A.MotionBlur(blur_limit=5),
+#                     A.GaussianBlur(blur_limit=(3, 5)),
+#                     A.MedianBlur(blur_limit=3),
+#                 ],
+#                 p=0.2,
+#             ),
+#             A.ImageCompression(quality_range=(70, 95), p=0.2),
+
+#             # ── 遮挡 ──────────────────────────────
+#             A.CoarseDropout(
+#                 num_holes_range=(1, 4),
+#                 hole_height_range=(8, 32),
+#                 hole_width_range=(8, 32),
+#                 fill=128,
+#                 p=0.15,
+#             ),
+#         ],
+#         bbox_params=A.BboxParams(
+#             format="yolo",
+#             label_fields=["class_labels"],
+#             min_area=100,
+#             min_visibility=0.3,
+#         ),
+#     )
+
+
+# def build_pipeline_heavy() -> A.Compose:
+#     """重度增强：用于小样本类，最大化数据多样性"""
+#     return A.Compose(
+#         [
+#             # ── 几何（更激进）─────────────────────
+#             A.HorizontalFlip(p=0.5),
+#             A.VerticalFlip(p=0.5),
+#             A.RandomRotate90(p=0.5),
+#             A.Affine(
+#                 translate_percent=(-0.1, 0.1),
+#                 scale=(0.75, 1.25),
+#                 rotate=(-20, 20),
+#                 border_mode=cv2.BORDER_REFLECT_101,
+#                 p=0.7,
+#             ),
+#             A.Perspective(scale=(0.05, 0.12), p=0.5),
+#             A.ElasticTransform(
+#                 alpha=30, sigma=5,
+#                 border_mode=cv2.BORDER_REFLECT_101,
+#                 p=0.3,
+#             ),
+
+#             # ── 光照/颜色（更激进）───────────────
+#             A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4, p=0.7),
+#             A.HueSaturationValue(hue_shift_limit=15, sat_shift_limit=35, val_shift_limit=35, p=0.6),
+#             A.CLAHE(clip_limit=5.0, tile_grid_size=(8, 8), p=0.4),
+#             A.RandomGamma(gamma_limit=(70, 140), p=0.4),
+#             A.ToGray(p=0.1),
+
+#             # ── 天气/环境 ─────────────────────────
+#             A.RandomShadow(
+#                 shadow_roi=(0, 0.2, 1, 1),
+#                 num_shadows_limit=(1, 3),
+#                 shadow_dimension=5,
+#                 p=0.4,
+#             ),
+#             A.RandomFog(fog_coef_range=(0.05, 0.3), p=0.25),
+#             A.RandomRain(p=0.15),
+#             A.RandomSunFlare(
+#                 flare_roi=(0, 0, 1, 0.5),
+#                 angle_range=(0, 1),
+#                 num_flare_circles_range=(3, 6),
+#                 p=0.1,
+#             ),
+
+#             # ── 噪声/模糊/压缩 ───────────────────
+#             A.OneOf(
+#                 [
+#                     A.GaussNoise(std_range=(0.04, 0.24)),
+#                     A.ISONoise(color_shift=(0.02, 0.08), intensity=(0.1, 0.35)),
+#                     A.MultiplicativeNoise(multiplier=(0.85, 1.15)),
+#                 ],
+#                 p=0.4,
+#             ),
+#             A.OneOf(
+#                 [
+#                     A.MotionBlur(blur_limit=7),
+#                     A.GaussianBlur(blur_limit=(3, 7)),
+#                     A.Defocus(radius=(1, 3)),
+#                 ],
+#                 p=0.3,
+#             ),
+#             A.ImageCompression(quality_range=(50, 90), p=0.3),
+
+#             # ── 遮挡 ──────────────────────────────
+#             A.CoarseDropout(
+#                 num_holes_range=(2, 8),
+#                 hole_height_range=(12, 48),
+#                 hole_width_range=(12, 48),
+#                 fill=128,
+#                 p=0.25,
+#             ),
+#         ],
+#         bbox_params=A.BboxParams(
+#             format="yolo",
+#             label_fields=["class_labels"],
+#             min_area=100,
+#             min_visibility=0.3,
+#         ),
+#     )
+
+def build_road_pavement_pipeline() -> A.Compose:
+    """道路路面检测专用的极简温和离线增强 pipeline
+    - 去掉所有噪声（GaussNoise、ISONoise 等）
+    - Hue 和 Brightness 调得非常小
+    - 只保留对路面检测最安全有效的变换
+    """
     return A.Compose(
         [
-            # ── 几何 ──────────────────────────────
+            # 1. 水平翻转（最安全，道路通常左右对称性较好）
             A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.3),
-            A.RandomRotate90(p=0.3),
+            
+            # 2. 极轻微几何变换（用 Affine 合并，避免失真）
             A.Affine(
-                translate_percent=(-0.05, 0.05),
-                scale=(0.85, 1.15),
-                rotate=(-10, 10),
+                translate_percent={"x": (-0.04, 0.04), "y": (-0.04, 0.04)},  # 很小的平移
+                scale=(0.92, 1.08),                                           # 轻微缩放（路面尺度变化不大）
+                rotate=(-5, 5),                                               # 很小的旋转角度
+                shear={"x": (-3, 3), "y": (-3, 3)},                           # 轻微剪切
                 border_mode=cv2.BORDER_REFLECT_101,
-                p=0.5,
+                p=0.35,                                                       # 概率不高
             ),
-            A.Perspective(scale=(0.03, 0.07), p=0.3),
-
-            # ── 光照/颜色 ─────────────────────────
-            A.RandomBrightnessContrast(brightness_limit=0.25, contrast_limit=0.25, p=0.6),
-            A.HueSaturationValue(hue_shift_limit=8, sat_shift_limit=20, val_shift_limit=20, p=0.4),
-            A.CLAHE(clip_limit=3.0, tile_grid_size=(8, 8), p=0.3),
-
-            # ── 天气/环境 ─────────────────────────
-            A.RandomShadow(
-                shadow_roi=(0, 0.3, 1, 1),
-                num_shadows_limit=(1, 2),
-                shadow_dimension=4,
-                p=0.25,
+            
+            # 3. 极轻微颜色/光照扰动（关键调整）
+            A.RandomBrightnessContrast(
+                brightness_limit=0.08,   # 原来 0.15 → 明显调小
+                contrast_limit=0.12,     # 轻微对比度调整（有助于裂缝突出）
+                p=0.4
             ),
-            A.RandomFog(fog_coef_range=(0.05, 0.2), p=0.15),
-            A.RandomRain(
-                slant_range=(-5, 5),
-                drop_length=8, drop_width=1,
-                drop_color=(180, 180, 180),
-                blur_value=2, brightness_coefficient=0.9,
-                p=0.1,
+            A.HueSaturationValue(
+                hue_shift_limit=3,       # 原来 5 → 调得更小，几乎不改变色调
+                sat_shift_limit=12,      # 饱和度轻微调整
+                val_shift_limit=12,      # 明度轻微调整
+                p=0.35
             ),
-
-            # ── 噪声/模糊/压缩 ───────────────────
-            A.OneOf(
-                [
-                    A.GaussNoise(std_range=(0.02, 0.11)),
-                    A.ISONoise(color_shift=(0.01, 0.05), intensity=(0.05, 0.2)),
-                ],
-                p=0.3,
-            ),
-            A.OneOf(
-                [
-                    A.MotionBlur(blur_limit=5),
-                    A.GaussianBlur(blur_limit=(3, 5)),
-                    A.MedianBlur(blur_limit=3),
-                ],
-                p=0.2,
-            ),
-            A.ImageCompression(quality_range=(70, 95), p=0.2),
-
-            # ── 遮挡 ──────────────────────────────
-            A.CoarseDropout(
-                num_holes_range=(1, 4),
-                hole_height_range=(8, 32),
-                hole_width_range=(8, 32),
-                fill=128,
-                p=0.15,
-            ),
+            
+            # 4. 轻微模糊（可选，帮助模拟轻微运动或远距离拍摄，可根据效果决定是否保留）
+            A.GaussianBlur(blur_limit=(3, 4), p=0.15),   # 概率很低，blur_limit 很小
         ],
         bbox_params=A.BboxParams(
             format="yolo",
             label_fields=["class_labels"],
-            min_area=100,
-            min_visibility=0.3,
+            min_area=40,              # 路面裂缝常有细长小目标，min_area 调低一些
+            min_visibility=0.35,      # 可见度要求适中，避免裁剪掉重要裂缝部分
         ),
     )
-
-
-def build_pipeline_heavy() -> A.Compose:
-    """重度增强：用于小样本类，最大化数据多样性"""
-    return A.Compose(
-        [
-            # ── 几何（更激进）─────────────────────
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.5),
-            A.RandomRotate90(p=0.5),
-            A.Affine(
-                translate_percent=(-0.1, 0.1),
-                scale=(0.75, 1.25),
-                rotate=(-20, 20),
-                border_mode=cv2.BORDER_REFLECT_101,
-                p=0.7,
-            ),
-            A.Perspective(scale=(0.05, 0.12), p=0.5),
-            A.ElasticTransform(
-                alpha=30, sigma=5,
-                border_mode=cv2.BORDER_REFLECT_101,
-                p=0.3,
-            ),
-
-            # ── 光照/颜色（更激进）───────────────
-            A.RandomBrightnessContrast(brightness_limit=0.4, contrast_limit=0.4, p=0.7),
-            A.HueSaturationValue(hue_shift_limit=15, sat_shift_limit=35, val_shift_limit=35, p=0.6),
-            A.CLAHE(clip_limit=5.0, tile_grid_size=(8, 8), p=0.4),
-            A.RandomGamma(gamma_limit=(70, 140), p=0.4),
-            A.ToGray(p=0.1),
-
-            # ── 天气/环境 ─────────────────────────
-            A.RandomShadow(
-                shadow_roi=(0, 0.2, 1, 1),
-                num_shadows_limit=(1, 3),
-                shadow_dimension=5,
-                p=0.4,
-            ),
-            A.RandomFog(fog_coef_range=(0.05, 0.3), p=0.25),
-            A.RandomRain(p=0.15),
-            A.RandomSunFlare(
-                flare_roi=(0, 0, 1, 0.5),
-                angle_range=(0, 1),
-                num_flare_circles_range=(3, 6),
-                p=0.1,
-            ),
-
-            # ── 噪声/模糊/压缩 ───────────────────
-            A.OneOf(
-                [
-                    A.GaussNoise(std_range=(0.04, 0.24)),
-                    A.ISONoise(color_shift=(0.02, 0.08), intensity=(0.1, 0.35)),
-                    A.MultiplicativeNoise(multiplier=(0.85, 1.15)),
-                ],
-                p=0.4,
-            ),
-            A.OneOf(
-                [
-                    A.MotionBlur(blur_limit=7),
-                    A.GaussianBlur(blur_limit=(3, 7)),
-                    A.Defocus(radius=(1, 3)),
-                ],
-                p=0.3,
-            ),
-            A.ImageCompression(quality_range=(50, 90), p=0.3),
-
-            # ── 遮挡 ──────────────────────────────
-            A.CoarseDropout(
-                num_holes_range=(2, 8),
-                hole_height_range=(12, 48),
-                hole_width_range=(12, 48),
-                fill=128,
-                p=0.25,
-            ),
-        ],
-        bbox_params=A.BboxParams(
-            format="yolo",
-            label_fields=["class_labels"],
-            min_area=100,
-            min_visibility=0.3,
-        ),
-    )
-
 # ══════════════════════════════════════════════
 # 3. YOLO 标注 IO
 # ══════════════════════════════════════════════
@@ -376,14 +420,15 @@ def run_augmentation(
 
     mild_pipeline  = build_pipeline_mild()
     heavy_pipeline = build_pipeline_heavy()
+    road_pavement_pipeline = build_road_pavement_pipeline()
 
     total_generated = 0
 
     for class_id, img_list in sorted(by_class.items()):
         mult = get_multiplier(class_id)
         cname = CLASS_NAMES[class_id] if class_id < len(CLASS_NAMES) else str(class_id)
-        pipeline = heavy_pipeline if mult >= SMALL_MULT else mild_pipeline
-
+        # pipeline = heavy_pipeline if mult >= SMALL_MULT else mild_pipeline
+        pipeline = road_pavement_pipeline  # 全部使用道路专用增强
         print(
             f"  [class {class_id}] {cname:8s}  "
             f"{len(img_list):4d} 张  ×{mult}  "
@@ -411,9 +456,9 @@ def run_augmentation(
 # /home/featurize/data/dataset
 def parse_args():
     p = argparse.ArgumentParser(description="道路数据集离线增强")
-    p.add_argument("--src_dir",       default="/home/featurize/data/dataset/dataset",
+    p.add_argument("--src_dir",       default="/home/forge/workspace/yolo-Q4/dataset",
                    help="原始数据集根目录（含 images/labels 子目录）")
-    p.add_argument("--out_dir",       default="/home/featurize/data/dataset/dataset_aug",
+    p.add_argument("--out_dir",       default="/home/forge/workspace/yolo-Q4/dataset_aug",
                    help="输出数据集根目录")
     p.add_argument("--split",         default="train",
                    choices=["train", "val", "test"],

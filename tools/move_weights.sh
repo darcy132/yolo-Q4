@@ -1,6 +1,6 @@
 #!/bin/bash
 
-WEIGHTS_DIR="./runs/detect/runs/detect/road_damage_v1_yolo26l-freeze/weights"
+WEIGHTS_DIR="./runs/detect/runs/detect/road_damage_v1_yolo26n-aug/weights"
 BACKUP_DIR="./pt_backup"
 
 mkdir -p "$BACKUP_DIR"
@@ -15,5 +15,5 @@ done
 
 echo "done. backup in $BACKUP_DIR"
 
-# 移动回来
-mv ./pt_backup/*.pt ./runs/detect/runs/detect/road_damage_v1_yolo26l-freeze/weights/
+# # 移动回来
+# mv ./pt_backup/*.pt ./runs/detect/runs/detect/road_damage_v1_yolo26l-freeze/weights/

@@ -3,12 +3,12 @@ from ultralytics import YOLO
 import wandb
 
 # ── 路径配置 ─────────────────────────────────────────────────────────────────
-DATA        = '/home/forge/workspace/yolo-Q4/dataset_cz/dataset.yaml'
+DATA        = '/home/forge/workspace/yolo-Q4/dataset_hbgdf/dataset.yaml'
 PROJECT     = 'runs/detect'
-NAME        = 'road_damage_v1_yolo26l-cz'
-IMGSZ       = 1024
+NAME        = 'road_damage_v1_yolo26n-hbgdf-auto-full'
+IMGSZ       = 640
 DEVICE      = 0
-BATCH       = 16
+BATCH       = 64
 EPOCHS      = 200
 # WANDB_PROJECT = 'road-damage-detection'
 # WANDB_RUN     = NAME
@@ -21,7 +21,7 @@ TRAIN_KWARGS = dict(
     project      = PROJECT,
     name         = NAME,
     epochs       = EPOCHS,
-    optimizer    = 'AdamW',
+    optimizer    = 'auto',
     weight_decay = 5e-4,
     freeze       = 10,
     lr0          = 1e-3,
